@@ -7,9 +7,33 @@ class Preprocessor:
         # Загрузка предварительно обученной модели детектора текста EAST
         self.net = cv2.dnn.readNet('assets/frozen_east_text_detection.pb')
 
+    def enhance_contrast(self, image):
+        alpha = 1.5  # Коэффициент контрастности
+        beta = 0  # Яркость
+        return cv2.convertScaleAbs(image, alpha=alpha, beta=beta)
+
+    def adaptive_binarization(self, image):
+        if len(image.shape) > 2 and image.shape[2] == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image
+        return cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                     cv2.THRESH_BINARY, 11, 2)
+
+    def correct_perspective(self, image):
+        pts1 = np.float32([[50, 50], [200, 50], [50, 200], [200, 200]])
+        pts2 = np.float32([[10, 100], [200, 50], [100, 250], [220, 220]])
+        matrix = cv2.getPerspectiveTransform(pts1, pts2)
+        return cv2.warpPerspective(image, matrix, (image.shape[1], image.shape[0]))
+
     def preprocess(self, image):
         # Копирование исходного изображения для последующего использования
         orig = image.copy()
+
+        image = self.enhance_contrast(image)
+        # image = self.adaptive_binarization(image)
+        # image = self.correct_perspective(image)
+
         # Получение размеров изображения
         (H, W) = image.shape[:2]
         # Определение нового размера для изменения размера изображения
@@ -106,9 +130,31 @@ class Preprocessor:
                 rects.append((startX, startY, endX, endY))
                 confidences.append(scoresData[x])
 
-                # Возврат списка прямоугольников и уверенностей
-            return rects, confidences
+        # Возврат списка прямоугольников и уверенностей за пределами циклов
+        return rects, confidences
 
-    def non_max_suppression(self, boxes, probs, overlapThresh=0.3):
-        # Применение подавления немаксимальных значений для фильтрации перекрывающихся рамок
-        return cv2.dnn.NMSBoxes(boxes, probs, overlapThresh)
+    def non_max_suppression(self, boxes, probs=None, overlapThresh=0.3):
+        if len(boxes) == 0:
+            return []
+        if boxes.dtype.kind == "i":
+            boxes = boxes.astype("float")
+        pick = []
+        x1 = boxes[:, 0]
+        y1 = boxes[:, 1]
+        x2 = boxes[:, 2]
+        y2 = boxes[:, 3]
+        area = (x2 - x1 + 1) * (y2 - y1 + 1)
+        idxs = np.argsort(probs)
+        while len(idxs) > 0:
+            last = len(idxs) - 1
+            i = idxs[last]
+            pick.append(i)
+            xx1 = np.maximum(x1[i], x1[idxs[:last]])
+            yy1 = np.maximum(y1[i], y1[idxs[:last]])
+            xx2 = np.minimum(x2[i], x2[idxs[:last]])
+            yy2 = np.minimum(y2[i], y2[idxs[:last]])
+            w = np.maximum(0, xx2 - xx1 + 1)
+            h = np.maximum(0, yy2 - yy1 + 1)
+            overlap = (w * h) / area[idxs[:last]]
+            idxs = np.delete(idxs, np.concatenate(([last], np.where(overlap > overlapThresh)[0])))
+        return boxes[pick].astype("int")
