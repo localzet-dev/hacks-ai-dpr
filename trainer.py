@@ -5,6 +5,7 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
 
 
 class Trainer:
@@ -66,6 +67,9 @@ class Trainer:
         и векторизатор после обучения или загрузки.
         """
         x, y, vectorizer = self._prepare_data()
+        x_train, x_test, y_train, y_test = train_test_split(x, y,
+                                                            test_size=self.test_size,
+                                                            random_state=self.random_state)
 
         # Проверка существования файлов только один раз
         model_exists = os.path.exists(self.model_path)
