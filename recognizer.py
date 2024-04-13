@@ -6,22 +6,27 @@ from transformers import BertTokenizer, BertForSequenceClassification
 from preprocessor import Preprocessor
 
 
+# Класс для распознавания и классификации текста из изображений
 class Recognizer:
+    # Инициализация модели BERT и токенизатора
     def __init__(self, model_path='bert-base-multilingual-cased'):
         self.model = BertForSequenceClassification.from_pretrained(model_path)
         self.tokenizer = BertTokenizer.from_pretrained(model_path)
         self.preprocessor = Preprocessor()
 
+    # Метод для преобразования изображения в строку текста
     def image_to_string(self, image):
         config = '--psm 6 --oem 3'
         return pytesseract.image_to_string(image, lang='rus+eng', config=config)
 
+    # Метод для классификации текста с помощью модели BERT
     def classify_text(self, text):
         inputs = self.tokenizer(text, return_tensors='pt')
         outputs = self.model(**inputs)
         probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
         return text, torch.argmax(probs).item()
 
+    # Основной метод для распознавания текста на изображении
     def recognize(self, image_path):
         image = cv2.imread(image_path)
         orig_with_boxes, ROIs = self.preprocessor.preprocess(image)
