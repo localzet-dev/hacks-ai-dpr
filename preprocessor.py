@@ -12,55 +12,31 @@ class Preprocessor:
         beta = 0  # Яркость
         return cv2.convertScaleAbs(image, alpha=alpha, beta=beta)
 
-    def adaptive_binarization(self, image):
-        if len(image.shape) > 2 and image.shape[2] == 3:
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = image
-        return cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                     cv2.THRESH_BINARY, 11, 2)
-
-    def correct_perspective(self, image):
-        pts1 = np.float32([[50, 50], [200, 50], [50, 200], [200, 200]])
-        pts2 = np.float32([[10, 100], [200, 50], [100, 250], [220, 220]])
-        matrix = cv2.getPerspectiveTransform(pts1, pts2)
-        return cv2.warpPerspective(image, matrix, (image.shape[1], image.shape[0]))
-
     def preprocess(self, image):
         # Копирование исходного изображения для последующего использования
         orig = image.copy()
 
         image = self.enhance_contrast(image)
-        # image = self.adaptive_binarization(image)
-        # image = self.correct_perspective(image)
 
-        # Получение размеров изображения
         (H, W) = image.shape[:2]
-        # Определение нового размера для изменения размера изображения
         new_size = (320, 320)
-        # Расчет соотношений для масштабирования ограничивающих рамок обратно к размеру исходного изображения
-        rW, rH = W / new_size[0], H / new_size[1]
-        # Изменение размера изображения до нового размера
-        resized_image = cv2.resize(image, new_size)
-        # Создание блоба из измененного изображения для ввода в нейронную сеть
+        rW, rH = W / float(new_size[0]), H / float(new_size[1])
+
+        resized_image = cv2.resize(image, (new_size[0], int(H * (new_size[0] / W))))
+
         blob = cv2.dnn.blobFromImage(resized_image, 1.0, new_size,
                                      (123.68, 116.78, 103.94), swapRB=True, crop=False)
-        # Установка блоба в качестве входных данных сети
         self.net.setInput(blob)
-        # Прямой проход через сеть для получения оценок и геометрии
         scores, geometry = self.net.forward(["feature_fusion/Conv_7/Sigmoid", "feature_fusion/concat_3"])
-        # Декодирование предсказаний для получения координат ограничивающих рамок и уверенности
-        rects, confidences = self.decode_predictions(scores, geometry)
-        # Применение подавления немаксимальных значений для фильтрации перекрывающихся рамок
-        boxes = self.non_max_suppression(np.array(rects), confidences)
-
-        # Извлечение регионов интереса на основе ограничивающих рамок
-        ROIs = [self.extract_ROI(orig, box, rW, rH) for box in boxes]
-
-        # Рисование ограничивающих рамок на исходном изображении
-        orig_with_boxes = self.draw_boxes(orig, boxes, rW, rH)
-
-        return orig_with_boxes, ROIs
+        try:
+            rects, confidences = self.decode_predictions(scores, geometry)
+            boxes = self.non_max_suppression(np.array(rects), confidences)
+            ROIs = [self.extract_ROI(orig, box, rW, rH) for box in boxes]
+            orig_with_boxes = self.draw_boxes(orig, boxes, rW, rH)
+            return orig_with_boxes, ROIs
+        except Exception as e:
+            print(f"An error occurred during preprocessing: {e}")
+            return orig, []
 
     def extract_ROI(self, orig_image, box_coords, rW, rH):
         # Расчет координат начала и конца области интереса (ROI)

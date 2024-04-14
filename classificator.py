@@ -49,3 +49,12 @@ class Classificator:
         predictions = self.model.predict(vectorized_names)
 
         return predictions
+
+
+
+classificator = Classificator()
+while True:
+    text_input = input()
+    print('Товар:', text_input)
+    ans = classificator.predict_category(text_input)
+    print('Категория:', ans)
